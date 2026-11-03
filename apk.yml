@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Find project folder
+        id: proj
+        run: |
+          P=$(dirname "$(find . -name pubspec.yaml -not -path './.git/*' | head -1)")
+          echo "Project folder: $P"
+          echo "dir=$P" >> "$GITHUB_OUTPUT"
+
+      - name: Generate android folder
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          mkdir -p /tmp/backup
+          cp -r lib pubspec.yaml /tmp/backup/
+          flutter create . --platforms=android --project-name danagak --org com.danagak
+          rm -rf lib pubspec.yaml test
+          cp -r /tmp/backup/lib /tmp/backup/pubspec.yaml .
+
+      - name: Apply app name and icon
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="داناگک"/' android/app/src/main/AndroidManifest.xml
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp assets_icon/ic_launcher_$d.png android/app/src/main/res/mipmap-$d/ic_launcher.png
+          done
+
+      - name: Get packages
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: danagak-apk
+          path: ${{ steps.proj.outputs.dir }}/build/app/outputs/flutter-apk/app-release.apk
